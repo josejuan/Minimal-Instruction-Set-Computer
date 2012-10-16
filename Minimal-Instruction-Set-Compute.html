@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+
+    <script type="text/template" id="source_code">
+
+; almacenamos un fin de línea para los mensajes
+:900
+@%0A%00
+
+; almacenamos un mensaje de texto
+:10000
+@Mi nombre es:%0A%09Juan%0A%00
+
+; principio del programa
+:1000
+
+; imprimimos el mensaje
+push #10000
+call printZString
+
+; imprimimos un número
+push #10000
+call printNum
+
+; imprimimos el fin de línea
+push #900
+call printZString
+
+; solicitamos una cadena de texto que almacenaremos en la posición 20000
+push #20000
+call readZString
+
+; la imprimimos
+call printZString
+
+; imprimimos el fin de línea
+push #900
+call printZString
+
+; solicitamos un número que almacenaremos en la posición 20000
+push #20000
+call readNum
+
+; solicitamos un número que almacenaremos en la posición 20001
+push #20001
+call readNum
+
+; sumamos
+add @20000, @20001
+
+; la imprimimos (la dirección 20001 que es la que está en la pila)
+call printNum
+
+; imprimimos el fin de línea
+push #900
+call printZString
+
+; cambio de contexto para tener líneas "conocidas"
+jmp #1500
+:1500
+; fijamos como registro contador la dirección 10
+mov #10, @10
+test @10
+jiz #1520
+	push #10
+	call printNum
+	pop @666
+	push #900
+	call printZString
+	pop @666
+	sub #1, @10
+jmp #1501
+:1520
+; fin de la cuenta
+
+; terminamos el programa
+halt
+
+    </script>
+
+    <script>
+
+      function out(msg) {
+        document.getElementById("out").appendChild(document.createTextNode(msg));
+      }
+      function err(msg) {
+      	out("ERROR, " + msg + "\n");
+      }
+      function errComp(line, msg, code) {
+      	out("ERROR en la línea " + line + ", " + msg + "\n");
+      	out("--------> " + code + "\n");
+      }
+
+      // [base:]index
+      function getMem(m, o) {
+      	var q = o.split(':');
+      	if(q.length == 2) return m[getMem(m, q[0]) + getMem(m, q[1])];
+      	if(o[0] == '@') return m[~~o.substr(1)];
+      	if(o[0] == '#') return ~~o.substr(1);
+      	err("getMem('" + o + "'), no se reconoce el argumento");
+      	return 0;
+      }
+
+      // [base:]index
+      function setMem(m, o, v) {
+      	var q = o.split(':');
+      	if(q.length == 2) return m[getMem(m, q[0]) + getMem(m, q[1])] = v;
+      	if(o[0] == '@') return m[~~o.substr(1)] = v;
+      	if(o[0] == '#') err("setMem('" + o + "'), se ha intentado asignar a una constante");
+      	else err("setMem('" + o + "'), no se reconoce el argumento");
+      	return 0;
+      }
+
+      function run_program() {
+        var src = document.getElementById("source_code").innerHTML.split('\n');
+        var mem = new Array(65536);
+
+        for(var a = 0; a < 65536; a++)
+          mem[a] = 0;
+
+  	mem[0] = 1000;
+  	mem[1] = 65535;
+
+  	var data = mem[0];
+
+  	for(var a = 0; a < src.length; a++) {
+  	  var cod = src[a].trim();
+  	  switch(cod[0]) {
+  	  case ';': break;
+  	  case ':': data = ~~cod.substr(1); break;
+  	  case '@': {   var s = unescape(cod.substr(1));
+  	  		for(var b = 0; b < s.length; b++) mem[data++] = s.charCodeAt(b)}
+	  	  break;
+  	  case '#': {   var s = cod.substr(1).split(',');
+  	  		for(var b = 0; b < s.length; b++) mem[data++] = ~~s[b].trim()}
+	  	  break;
+	  default:
+	  	{
+	  		var ins = cod.trim(), ops = [];
+	  		var k = ins.indexOf(' ');
+	  		if(k > 0) {
+	  		  ins = cod.substr(0, k);
+	  		  ops = cod.substr(k + 1).split(',');
+	  		  ops[0] = ops[0].trim();
+	  		  if(ops.length == 2) ops[1] = ops[1].trim();
+	  		}
+	  		switch(ins) {
+	  		case 'push': mem[data++] = (function(o){var O = o; return function(m) {m[m[1]--] = getMem(m, O); m[0]++}})(ops[0]); break;
+	  		case 'pop': mem[data++] = (function(o){var O = o; return function(m) {setMem(m, O, m[++m[1]]); m[0]++}})(ops[0]); break;
+	  		case 'test': mem[data++] = (function(o){var O = o; return function(m) {m[2] = getMem(m, O); m[0]++}})(ops[0]); break;
+	  		case 'call': mem[data++] = (function(o){var O = o; return function(m) {
+	  						  switch(O) {
+	  						  case 'printZString': {
+	  						  	  var a = m[m[1] + 1], w = [];
+	  						  	  while(m[a] > 0) w.push(String.fromCharCode(m[a++]));
+	  						  	  out(w.join(''));
+	  						  	}
+	  						  	break;
+	  						  case 'printNum': out(~~m[m[m[1] + 1]]); break;
+	  						  case 'readZString': {
+	  						  	  var a = m[m[1] + 1], w = prompt("Introduce una cadena:");
+	  						  	  for(var i = 0; i < w.length; i++) m[a++] = w.charCodeAt(i);
+	  						  	}
+	  						  	break;
+	  						  case 'readNum': m[m[m[1] + 1]] = ~~prompt("Introduce un número:"); break;
+	  						  default: {
+	  						  	  m[m[1]--] = m[0] + 1;
+	  						  	  m[0] = getMem(m, O);
+	  						  	}
+	  						  	break;
+	  						  }
+	  						  m[0]++;
+					  		}})(ops[0]);
+					  		break;
+	  		case 'jin': mem[data++] = (function(o){var O = o; return function(m) {if(m[2]<0) m[0] = getMem(m, O); else m[0]++}})(ops[0]); break;
+	  		case 'jiz': mem[data++] = (function(o){var O = o; return function(m) {if(m[2]==0) m[0] = getMem(m, O); else m[0]++}})(ops[0]); break;
+	  		case 'jip': mem[data++] = (function(o){var O = o; return function(m) {if(m[2]>0) m[0] = getMem(m, O); else m[0]++}})(ops[0]); break;
+	  		case 'jmp': mem[data++] = (function(o){var O = o; return function(m) {m[0] = getMem(m, O)}})(ops[0]); break;
+			case 'add': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, S) + getMem(m, D)); m[0]++}})(ops[0], ops[1]); break;
+			case 'sub': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, D) - getMem(m, S)); m[0]++}})(ops[0], ops[1]); break;
+			case 'and': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, S) & getMem(m, D)); m[0]++}})(ops[0], ops[1]); break;
+			case 'shl': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, S, getMem(m, S) << getMem(m, D)); m[0]++}})(ops[0], ops[1]); break;
+			case 'shr': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, S, getMem(m, S) >> getMem(m, D)); m[0]++}})(ops[0], ops[1]); break;
+			case 'or': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, S) | getMem(m, D)); m[0]++}})(ops[0], ops[1]); break;
+			case 'div': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, D) / getMem(m, S)); m[0]++}})(ops[0], ops[1]); break;
+			case 'mul': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, D) * getMem(m, S)); m[0]++}})(ops[0], ops[1]); break;
+			case 'mov': mem[data++] = (function(s, d){var S = s, D = d; return function(m){setMem(m, D, getMem(m, S)); m[0]++}})(ops[0], ops[1]); break;
+			case 'halt': mem[data++] = function(m){m[0]=0}; break;
+			case 'ret': mem[data++] = function(m){m[0]=m[++m[1]]}; break;
+			case '': break;
+	  		default:
+	  		  errComp(a, "no se reconoce el contenido de la línea", src[a]);
+	  		  return;
+	  		}
+	  	}
+	  	break;
+  	  }
+  	}
+
+  	// run loop
+  	while(mem[0] != 0)
+  	  mem[mem[0]](mem);
+
+  	out("\n\n\nPrograma detenido.");
+      }
+
+    </script>
+
+  </head>
+  <body onload="run_program()">
+    <pre id="out">
+    </pre>
+  </body>
+</html>
